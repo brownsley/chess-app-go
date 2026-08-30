@@ -35,11 +35,12 @@ func makeMatchingPrefix(gameMode game.MatchType) string {
 	return game.GetQueueName(gameMode)
 }
 
-func (s *RedisService) AddToMatchingQueue(gameMode game.MatchType, playerId string, playerElo int) error {
+func (s *RedisService) AddToMatchingQueue(gameMode game.MatchType, playerId string, playerName string, playerElo int) error {
 	queueKey := makeMatchingPrefix(gameMode)
+	memberValue := fmt.Sprintf("%s:%s", playerId, playerName)
 	return s.client.ZAdd(s.ctx, queueKey, redis.Z{
 		Score:  float64(playerElo),
-		Member: playerId,
+		Member: memberValue,
 	}).Err()
 }
 

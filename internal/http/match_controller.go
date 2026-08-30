@@ -28,7 +28,7 @@ func (c *MatchController) JoinQueueHandler(w http.ResponseWriter, r *http.Reques
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	c.matchingService.JoinQueue(req.GameMode, req.Minutes, req.PlayerId, req.PlayerElo)
+	c.matchingService.JoinQueue(req.GameMode, req.Minutes, req.PlayerId, req.PlayerName, req.PlayerElo)
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"message": "Joined queue successfully"}`))
 }

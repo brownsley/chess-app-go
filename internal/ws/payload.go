@@ -8,6 +8,14 @@ import (
 
 type MessageType string
 
+type ColorChoice string
+
+const (
+	ChoiceWhite  ColorChoice = "WHITE"
+	ChoiceBlack  ColorChoice = "BLACK"
+	ChoiceRandom ColorChoice = "RANDOM"
+)
+
 const (
 	TypeMatchFound    MessageType = "match_found"
 	TypeInvite        MessageType = "invite"
@@ -23,11 +31,12 @@ type IncomingMessage struct {
 }
 
 type InvitePayload struct {
-	ChallengerName string         `json:"challengerName"`
-	ChallengerID   string         `json:"challengerId"`
-	OtherPlayer    string         `json:"otherPlayer"`
-	WhitePlayer    string         `json:"whitePlayer"`
-	MatchType      game.MatchType `json:"matchType"`
+	ChallengerName  string         `json:"challengerName"`
+	ChallengerID    string         `json:"challengerId"`
+	OtherPlayer     string         `json:"otherPlayer"`
+	OtherPlayerName string         `json:"otherPlayerName"`
+	ColorPreference ColorChoice    `json:"colorPreference"`
+	MatchType       game.MatchType `json:"matchType"`
 }
 
 type MovePayload struct {

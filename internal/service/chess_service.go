@@ -154,5 +154,7 @@ func (s *ChessService) ProcessResign(matchId string, resignPayload ws.ResignPayl
 	}
 
 	s.cleanupMatchTimer(matchId)
-	s.roomManager.BroadcastToRedis([]string{white.ID, black.ID}, ws.TypeMatchComplete, s.createMatchCompletePayload(matchId, winnerId, false, enum.ReasonResignation))
+	payload := s.createMatchCompletePayload(matchId, winnerId, false, enum.ReasonResignation)
+	s.roomManager.SendMatchComplete(matchId, payload)
+
 }

@@ -4,6 +4,7 @@ import (
 	"game-server/internal/game"
 	"game-server/internal/ws"
 	"game-server/utils"
+	"strings"
 )
 
 type MatchingService struct {
@@ -24,33 +25,45 @@ func (s *MatchingService) LeaveFromMatchingQueue(modeName game.MatchType, player
 	return s.redisService.RemoveFromMatchingQueue(modeName, playerId)
 }
 
-func (s *MatchingService) StartMatch(invite ws.InvitePayload) {
-	matchId := utils.IdGenerate(8)
-	whiteId, blackId := s.resolveInvitePlayers(invite)
-	whitePlayer, blackPlayer := s.createPlayers(whiteId, blackId, 0)
-
+func (s *MatchingService) StartFriendMatch(invite ws.InvitePayload, withFriend bool) {
+	matchId := utils.IdGenerate(8, withFriend)
+	whiteId, whiteName, blackId, blackName := s.resolveInvitePlayers(invite)
+	whitePlayer, blackPlayer := s.createPlayers(whiteId, whiteName, blackId, blackName, 0)
 	s.chessService.InitializeMatch(matchId, invite.MatchType, whitePlayer, blackPlayer)
 }
 
-func (s *MatchingService) ProcessMatch(modeName game.MatchType, playerId string, playerElo int) {
+func (s *MatchingService) ProcessQueueMatch(modeName game.MatchType, playerId string, playerName string, playerElo int) {
 	potentialMatches, err := s.redisService.FindMatchingPlayers(modeName, playerElo, 100)
 
 	if err == nil && len(potentialMatches) > 0 {
-		for _, potentialPlayerId := range potentialMatches {
+		for _, rawMember := range potentialMatches {
+			parts := strings.SplitN(rawMember, ":", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			potentialPlayerId := parts[0]
+			potentialPlayerName := parts[1]
+
 			if potentialPlayerId != playerId {
-				matchId := utils.IdGenerate(10)
-				whiteId, blackId := s.randomizePlayers(playerId, potentialPlayerId)
+				matchId := utils.IdGenerate(10, false)
+
+				whiteId, whiteName, blackId, blackName := s.randomizeQueuePlayers(
+					playerId, playerName,
+					potentialPlayerId, potentialPlayerName,
+				)
+
 				s.removePlayersFromQueue(modeName, playerId, potentialPlayerId)
-				whitePlayer, blackPlayer := s.createPlayers(whiteId, blackId, playerElo)
+
+				whitePlayer, blackPlayer := s.createPlayers(whiteId, whiteName, blackId, blackName, playerElo)
 				s.chessService.InitializeMatch(matchId, modeName, whitePlayer, blackPlayer)
 				return
 			}
 		}
 	}
 
-	_ = s.redisService.AddToMatchingQueue(modeName, playerId, playerElo)
+	_ = s.redisService.AddToMatchingQueue(modeName, playerId, playerName, playerElo)
 }
 
-func (s *MatchingService) JoinQueue(modeName game.MatchType, minutes int, playerId string, playerElo int) {
-	s.ProcessMatch(modeName, playerId, playerElo)
+func (s *MatchingService) JoinQueue(modeName game.MatchType, minutes int, playerId string, playerName string, playerElo int) {
+	s.ProcessQueueMatch(modeName, playerId, playerName, playerElo)
 }

@@ -19,10 +19,16 @@ func userIdGenerate() string {
 	return string(b)
 }
 
-func IdGenerate(length int) string {
+func IdGenerate(length int, withFri bool) string {
 	b := make([]byte, length)
 	for i := range b {
 		b[i] = charset[seededRand.Intn(len(charset))]
 	}
-	return string(b)
+	var prefix string
+	if withFri {
+		prefix = "F"
+	} else {
+		prefix = "O"
+	}
+	return prefix + string(b)
 }
