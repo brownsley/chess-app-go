@@ -1,127 +1,73 @@
 package ws
 
 import (
+	"context"
 	"encoding/json"
 	"log"
-	"net/http"
+	"sync"
 
 	"github.com/gorilla/websocket"
+	"github.com/redis/go-redis/v9"
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
+type TokenValidator interface {
+	ValidateToken(tokenStr string) (userID string, err error)
 }
 
-func (rm *RoomManager) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Println("Upgrade Error:", err)
-		return
-	}
-	defer conn.Close()
+type MoveHandlerFunc func(move MovePayload)
+type ResignHandlerFunc func(matchId string, resign ResignPayload)
+type AcceptInviteHandlerFunc func(invite InvitePayload)
+type MatchCompleteHandlerFunc func(roomID string, complete MatchCompletePayload)
 
-	roomID := r.PathValue("roomId")
-	if roomID == "" {
-		log.Println("Room ID is empty")
-		return
-	}
+type Room struct {
+	ID      string
+	Clients map[string]*websocket.Conn
+	mu      sync.Mutex
+}
 
-	rm.mu.Lock()
-	room, exist := rm.Rooms[roomID]
-	if !exist {
-		room = &Room{
-			ID:      roomID,
-			Clients: []*websocket.Conn{},
-		}
-		rm.Rooms[roomID] = room
-	}
-	rm.mu.Unlock()
+type RoomManager struct {
+	mu             sync.Mutex
+	LobbyClients   map[string]*websocket.Conn
+	MatchRooms     map[string]*Room
+	Redis          *redis.Client
+	TokenValidator TokenValidator
 
-	room.mu.Lock()
-	room.Clients = append(room.Clients, conn)
-	room.mu.Unlock()
+	OnMove          MoveHandlerFunc
+	OnResign        ResignHandlerFunc
+	OnAcceptInvite  AcceptInviteHandlerFunc
+	OnMatchComplete MatchCompleteHandlerFunc
+}
 
-	log.Printf("Client connected to Room/Player: %s\n", roomID)
-
-	for {
-		var msg Message
-		err := conn.ReadJSON(&msg)
-		if err != nil {
-			log.Printf("Client disconnected from Room/Player: %s\n", roomID)
-			rm.removeClient(roomID, conn)
-			break
-		}
-
-		switch msg.Type {
-		case TypeMove:
-			payloadBytes, _ := json.Marshal(msg.Payload)
-			var move MovePayload
-			if err := json.Unmarshal(payloadBytes, &move); err == nil {
-				if rm.OnMove != nil {
-					rm.OnMove(move)
-				}
-			}
-		case TypeResign:
-			payloadBytes, _ := json.Marshal(msg.Payload)
-			var resign ResignPayload
-			if err := json.Unmarshal(payloadBytes, &resign); err == nil {
-				if rm.OnResign != nil {
-					rm.OnResign(roomID, resign)
-				}
-			}
-
-		case TypeInvite:
-			payloadBytes, _ := json.Marshal(msg.Payload)
-			var invite InvitePayload
-			if err := json.Unmarshal(payloadBytes, &invite); err == nil {
-				rm.SendInvite(invite)
-				log.Printf("Received Invite from %s to %s\n", invite.ChallengerID, invite.OtherPlayer)
-			}
-		case TypeAcceptInvite:
-			payloadBytes, _ := json.Marshal(msg.Payload)
-			var invite InvitePayload
-			if err := json.Unmarshal(payloadBytes, &invite); err == nil {
-				if rm.OnAcceptInvite != nil {
-					rm.OnAcceptInvite(invite)
-				}
-			}
-
-		case TypeMatchComplete:
-			payloadBytes, _ := json.Marshal(msg.Payload)
-			var complete MatchCompletePayload
-			if err := json.Unmarshal(payloadBytes, &complete); err == nil {
-				if rm.OnMatchComplete != nil {
-					rm.OnMatchComplete(roomID, complete)
-				}
-			}
-		default:
-			log.Printf("Unknown message type: %s\n", msg.Type)
-		}
+func NewRoomManager(redisClient *redis.Client, validator TokenValidator) *RoomManager {
+	return &RoomManager{
+		LobbyClients:   make(map[string]*websocket.Conn),
+		MatchRooms:     make(map[string]*Room),
+		Redis:          redisClient,
+		TokenValidator: validator,
 	}
 }
 
-func (rm *RoomManager) removeClient(roomID string, conn *websocket.Conn) {
-	rm.mu.Lock()
-	defer rm.mu.Unlock()
-	room, exist := rm.Rooms[roomID]
-	if !exist {
+func (rm *RoomManager) StartRedisSubscriber() {
+	if rm.Redis == nil {
 		return
 	}
-	room.mu.Lock()
-	defer room.mu.Unlock()
+	ctx := context.Background()
+	sub := rm.Redis.Subscribe(ctx, "global_match_channel")
+	log.Println("Redis Subscriber started listening on 'global_match_channel'...")
 
-	filtered := []*websocket.Conn{}
-	for _, c := range room.Clients {
-		if c != conn {
-			filtered = append(filtered, c)
+	go func() {
+		ch := sub.Channel()
+		for msg := range ch {
+			var wrapper struct {
+				TargetIDs []string        `json:"targetIds"`
+				Message   json.RawMessage `json:"message"`
+			}
+			if err := json.Unmarshal([]byte(msg.Payload), &wrapper); err == nil {
+				for _, id := range wrapper.TargetIDs {
+					rm.SendRawMessageToUser(id, wrapper.Message)
+					rm.SendRawMessageToMatch(id, wrapper.Message)
+				}
+			}
 		}
-	}
-	room.Clients = filtered
-	if len(room.Clients) == 0 {
-		delete(rm.Rooms, roomID)
-	}
+	}()
 }

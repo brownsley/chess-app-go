@@ -3,68 +3,161 @@ package ws
 import (
 	"encoding/json"
 	"log"
+	"net/http"
 
 	"github.com/gorilla/websocket"
 )
 
-func (rm *RoomManager) SendRawMessageToRoom(id string, message json.RawMessage) {
-	rm.mu.Lock()
-	room, exists := rm.Rooms[id]
-	rm.mu.Unlock()
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
+}
 
-	if !exists {
+func (rm *RoomManager) HandleLobbyWebSocket(w http.ResponseWriter, r *http.Request) {
+	userID := r.URL.Query().Get("userId")
+	if userID == "" {
+		http.Error(w, "Bad Request: Missing userId", http.StatusBadRequest)
 		return
 	}
 
-	room.mu.Lock()
-	defer room.mu.Unlock()
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Println("Lobby Upgrade Error:", err)
+		return
+	}
 
-	for _, client := range room.Clients {
-		err := client.WriteMessage(websocket.TextMessage, message)
-		if err != nil {
-			log.Println("SendRawMessage error:", err)
+	rm.mu.Lock()
+	rm.LobbyClients[userID] = conn
+	rm.mu.Unlock()
+
+	log.Printf("Lobby Connected: Player %s\n", userID)
+
+	defer func() {
+		conn.Close()
+		rm.mu.Lock()
+		delete(rm.LobbyClients, userID)
+		rm.mu.Unlock()
+		log.Printf("Lobby Disconnected: Player %s\n", userID)
+	}()
+
+	for {
+		var msg Message
+		if err := conn.ReadJSON(&msg); err != nil {
+			break
+		}
+
+		switch msg.Type {
+		case TypeInvite:
+			payloadBytes, _ := json.Marshal(msg.Payload)
+			var invite InvitePayload
+			if err := json.Unmarshal(payloadBytes, &invite); err == nil {
+				rm.SendInvite(invite)
+			}
+		case TypeAcceptInvite:
+			payloadBytes, _ := json.Marshal(msg.Payload)
+			var invite InvitePayload
+			if err := json.Unmarshal(payloadBytes, &invite); err == nil && rm.OnAcceptInvite != nil {
+				rm.OnAcceptInvite(invite)
+			}
 		}
 	}
 }
 
-func (rm *RoomManager) SendMessageByRoomID(roomID string, msgType MessageType, payload interface{}) {
+func (rm *RoomManager) HandleMatchWebSocket(w http.ResponseWriter, r *http.Request) {
+	userID := r.URL.Query().Get("userId")
+	if userID == "" {
+		http.Error(w, "Bad Request: Missing userId", http.StatusBadRequest)
+		return
+	}
+
+	matchID := r.PathValue("matchId")
+	if matchID == "" {
+		http.Error(w, "Match ID required", http.StatusBadRequest)
+		return
+	}
+
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Println("Match Upgrade Error:", err)
+		return
+	}
+
 	rm.mu.Lock()
-	room, exists := rm.Rooms[roomID]
+	room, exists := rm.MatchRooms[matchID]
+	if !exists {
+		room = &Room{
+			ID:      matchID,
+			Clients: make(map[string]*websocket.Conn),
+		}
+		rm.MatchRooms[matchID] = room
+	}
+	room.mu.Lock()
+	room.Clients[userID] = conn
+	room.mu.Unlock()
 	rm.mu.Unlock()
 
+	log.Printf("Match Connected: User %s in Match %s\n", userID, matchID)
+
+	defer func() {
+		conn.Close()
+		rm.removeMatchClient(matchID, userID)
+		log.Printf("Match Disconnected: User %s from Match %s\n", userID, matchID)
+	}()
+
+	for {
+		var msg Message
+		if err := conn.ReadJSON(&msg); err != nil {
+			break
+		}
+
+		switch msg.Type {
+		case TypeMove:
+			payloadBytes, err := json.Marshal(msg.Payload)
+			if err != nil {
+				continue
+			}
+			var move MovePayload
+			if err := json.Unmarshal(payloadBytes, &move); err != nil {
+				continue
+			}
+			if rm.OnMove != nil {
+				rm.OnMove(move)
+			}
+
+		case TypeResign:
+			payloadBytes, _ := json.Marshal(msg.Payload)
+			var resign ResignPayload
+			if err := json.Unmarshal(payloadBytes, &resign); err == nil && rm.OnResign != nil {
+				rm.OnResign(matchID, resign)
+			}
+		case TypeMatchComplete:
+			payloadBytes, _ := json.Marshal(msg.Payload)
+			var complete MatchCompletePayload
+			if err := json.Unmarshal(payloadBytes, &complete); err == nil && rm.OnMatchComplete != nil {
+				rm.OnMatchComplete(matchID, complete)
+			}
+		}
+	}
+}
+
+func (rm *RoomManager) removeMatchClient(matchID string, userID string) {
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+
+	room, exists := rm.MatchRooms[matchID]
 	if !exists {
 		return
 	}
+
 	room.mu.Lock()
-	defer room.mu.Unlock()
+	delete(room.Clients, userID)
+	isEmpty := len(room.Clients) == 0
+	room.mu.Unlock()
 
-	msg := Message{
-		Type:    msgType,
-		Payload: payload,
+	if isEmpty {
+		delete(rm.MatchRooms, matchID)
 	}
-
-	for _, client := range room.Clients {
-		_ = client.WriteJSON(msg)
-	}
-}
-
-func (rm *RoomManager) SendMatchFoundToBoth(matchId string, playerId1, playerId2 string, matchData MatchFoundPayload) {
-	targetIDs := []string{playerId1, playerId2, matchId}
-	rm.BroadcastToRedis(targetIDs, TypeMatchFound, matchData)
-}
-
-func (rm *RoomManager) SendInvite(invite InvitePayload) {
-	targetID := []string{invite.OtherPlayer}
-	rm.BroadcastToRedis(targetID, TypeInvite, invite)
-}
-
-func (rm *RoomManager) SendMatchMoveProcess(matchId string, targetIDs []string, gameState GameStatePayload) {
-	rm.BroadcastToRedis([]string{matchId}, TypeMove, gameState)
-}
-
-func (rm *RoomManager) SendMatchComplete(matchId string, completePayload MatchCompletePayload) {
-	rm.BroadcastToRedis([]string{matchId}, TypeMatchComplete, completePayload)
-}
-func (rm *RoomManager) SendResignProcess(matchId string, targetIDs []string, resignPayload ResignPayload) {
-	rm.BroadcastToRedis([]string{matchId}, TypeResign, resignPayload)
 }

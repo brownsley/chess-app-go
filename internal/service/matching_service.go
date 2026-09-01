@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"game-server/internal/game"
 	"game-server/internal/ws"
 	"game-server/utils"
@@ -21,8 +22,10 @@ func NewMatchingService(redisService *RedisService, chessService *ChessService, 
 	}
 }
 
-func (s *MatchingService) LeaveFromMatchingQueue(modeName game.MatchType, playerId string) error {
-	return s.redisService.RemoveFromMatchingQueue(modeName, playerId)
+func (s *MatchingService) LeaveFromMatchingQueue(modeName game.MatchType, playerId string, playerName string) error {
+	rawMember := fmt.Sprintf("%s:%s", playerId, playerName)
+	_, err := s.redisService.RemoveFromMatchingQueue(modeName, rawMember)
+	return err
 }
 
 func (s *MatchingService) StartFriendMatch(invite ws.InvitePayload, withFriend bool) {
@@ -45,14 +48,20 @@ func (s *MatchingService) ProcessQueueMatch(modeName game.MatchType, playerId st
 			potentialPlayerName := parts[1]
 
 			if potentialPlayerId != playerId {
+				removed, err := s.redisService.RemoveFromMatchingQueue(modeName, rawMember)
+				if err != nil || !removed {
+					continue
+				}
+
+				currentRawMember := fmt.Sprintf("%s:%s", playerId, playerName)
+				_, _ = s.redisService.RemoveFromMatchingQueue(modeName, currentRawMember)
+
 				matchId := utils.IdGenerate(10, false)
 
 				whiteId, whiteName, blackId, blackName := s.randomizeQueuePlayers(
 					playerId, playerName,
 					potentialPlayerId, potentialPlayerName,
 				)
-
-				s.removePlayersFromQueue(modeName, playerId, potentialPlayerId)
 
 				whitePlayer, blackPlayer := s.createPlayers(whiteId, whiteName, blackId, blackName, playerElo)
 				s.chessService.InitializeMatch(matchId, modeName, whitePlayer, blackPlayer)

@@ -113,6 +113,12 @@ func (s *ChessService) updateAndGetTimers(matchId string) (int64, int64) {
 	return 0, 0
 }
 
+func (s *ChessService) cleanupMatch(matchId string) {
+	s.cleanupMatchTimer(matchId)
+
+	_ = s.redisService.CleanData(matchId)
+}
+
 func (s *ChessService) determineGameReason(status chess.Method, isGameOver bool) (enum.GameEndReason, bool) {
 	switch status {
 	case chess.Checkmate:

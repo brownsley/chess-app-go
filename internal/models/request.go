@@ -11,7 +11,8 @@ type JoinQueueRequest struct {
 }
 
 type LeaveQueueRequest struct {
-	GameMode game.MatchType `json:"gameMode"`
-	Minutes  int            `json:"minutes"`
-	PlayerId string         `json:"playerId"`
+	GameMode   game.MatchType `json:"gameMode"`
+	Minutes    int            `json:"minutes"`
+	PlayerId   string         `json:"playerId"`
+	PlayerName string         `json:"playerName"`
 }

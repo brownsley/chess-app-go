@@ -15,12 +15,12 @@ type RedisService struct {
 }
 
 const (
-	boardPrefix     = "match:board:"
-	playerPrefix    = "match:players:"
-	movesPrefix     = "match:moves:"
-	invitePrefix    = "match:invite:"
-	matchTypePrefix = "match:type:"
-	matchTTL        = 2 * time.Hour
+	boardPrefix     = "m:b:"
+	playerPrefix    = "m:p:"
+	movesPrefix     = "m:m:"
+	invitePrefix    = "m:i:"
+	matchTypePrefix = "m:t:"
+	matchTTL        = 30 * time.Minute
 	inviteTTL       = 60 * time.Second
 )
 
@@ -29,6 +29,10 @@ func NewRedisService(client *redis.Client) *RedisService {
 		client: client,
 		ctx:    context.Background(),
 	}
+}
+
+func (s *RedisService) getMatchKeys(matchId string) (boardKey, playerKey, movesKey, matchTypeKey string) {
+	return boardPrefix + matchId, playerPrefix + matchId, movesPrefix + matchId, matchTypePrefix + matchId
 }
 
 func makeMatchingPrefix(gameMode game.MatchType) string {
@@ -44,9 +48,13 @@ func (s *RedisService) AddToMatchingQueue(gameMode game.MatchType, playerId stri
 	}).Err()
 }
 
-func (s *RedisService) RemoveFromMatchingQueue(gameMode game.MatchType, playerId string) error {
+func (s *RedisService) RemoveFromMatchingQueue(gameMode game.MatchType, rawMember string) (bool, error) {
 	queueKey := makeMatchingPrefix(gameMode)
-	return s.client.ZRem(s.ctx, queueKey, playerId).Err()
+	count, err := s.client.ZRem(s.ctx, queueKey, rawMember).Result()
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func (s *RedisService) FindMatchingPlayers(gameMode game.MatchType, playerElo int, gap int) ([]string, error) {
@@ -69,8 +77,16 @@ func (s *RedisService) GetPlayersFromQueue(gameMode game.MatchType, start, end i
 }
 
 func (s *RedisService) SetBoardFen(matchId, fen string) error {
-	key := boardPrefix + matchId
-	return s.client.Set(s.ctx, key, fen, matchTTL).Err()
+	boardKey, playerKey, movesKey, matchTypeKey := s.getMatchKeys(matchId)
+
+	pipe := s.client.Pipeline()
+	pipe.Set(s.ctx, boardKey, fen, matchTTL)
+	pipe.Expire(s.ctx, playerKey, matchTTL)
+	pipe.Expire(s.ctx, movesKey, matchTTL)
+	pipe.Expire(s.ctx, matchTypeKey, matchTTL)
+
+	_, err := pipe.Exec(s.ctx)
+	return err
 }
 
 func (s *RedisService) GetBoardFen(matchId string) (string, error) {
@@ -109,12 +125,21 @@ func (s *RedisService) GetPlayers(matchId string) (map[string]string, error) {
 }
 
 func (s *RedisService) PushMove(matchId, moveNotation string) error {
-	key := movesPrefix + matchId
-	err := s.client.RPush(s.ctx, key, moveNotation).Err()
+	boardKey, playerKey, movesKey, matchTypeKey := s.getMatchKeys(matchId)
+
+	err := s.client.RPush(s.ctx, movesKey, moveNotation).Err()
 	if err != nil {
 		return err
 	}
-	return s.client.Expire(s.ctx, key, matchTTL).Err()
+
+	pipe := s.client.Pipeline()
+	pipe.Expire(s.ctx, movesKey, matchTTL)
+	pipe.Expire(s.ctx, boardKey, matchTTL)
+	pipe.Expire(s.ctx, playerKey, matchTTL)
+	pipe.Expire(s.ctx, matchTypeKey, matchTTL)
+
+	_, err = pipe.Exec(s.ctx)
+	return err
 }
 
 func (s *RedisService) GetMoves(matchId string) ([]string, error) {
@@ -123,11 +148,7 @@ func (s *RedisService) GetMoves(matchId string) ([]string, error) {
 }
 
 func (s *RedisService) CleanData(matchId string) error {
-	boardKey := boardPrefix + matchId
-	playerKey := playerPrefix + matchId
-	movesKey := movesPrefix + matchId
-	matchTypeKey := matchTypePrefix + matchId
-
+	boardKey, playerKey, movesKey, matchTypeKey := s.getMatchKeys(matchId)
 	_, err := s.client.Del(s.ctx, boardKey, playerKey, movesKey, matchTypeKey).Result()
 	return err
 }

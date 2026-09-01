@@ -7,12 +7,11 @@ import (
 	"math/rand/v2"
 )
 
-func (s *MatchingService) removePlayersFromQueue(modeName game.MatchType, playerIds ...string) {
-	for _, id := range playerIds {
-		_ = s.redisService.RemoveFromMatchingQueue(modeName, id)
+func (s *MatchingService) removePlayersFromQueue(modeName game.MatchType, rawMembers ...string) {
+	for _, member := range rawMembers {
+		_, _ = s.redisService.RemoveFromMatchingQueue(modeName, member)
 	}
 }
-
 func (s *MatchingService) createPlayers(whiteId, whiteName, blackId, blackName string, elo int) (models.Player, models.Player) {
 	white := models.Player{
 		ID:   whiteId,

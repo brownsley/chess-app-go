@@ -1,13 +1,14 @@
 package service
 
 import (
+	"sync"
+	"time"
+
 	"game-server/internal/enum"
 	"game-server/internal/game"
 	chessgame "game-server/internal/game"
 	"game-server/internal/models"
 	"game-server/internal/ws"
-	"sync"
-	"time"
 
 	"github.com/corentings/chess/v2"
 )
@@ -86,8 +87,8 @@ func (s *ChessService) HandleTimeout(matchId string, isWhiteTimeout bool, white,
 		winnerId = white.ID
 	}
 
-	s.cleanupMatchTimer(matchId)
 	s.roomManager.SendMatchComplete(matchId, s.createMatchCompletePayload(matchId, winnerId, false, enum.ReasonTimeOut))
+	s.cleanupMatch(matchId)
 }
 
 func (s *ChessService) ProcessMove(movePayload ws.MovePayload) {
@@ -115,11 +116,13 @@ func (s *ChessService) ProcessMove(movePayload ws.MovePayload) {
 	}
 	g := chess.NewGame(opt)
 
-	if expectedID := s.getExpectedPlayerID(g, white, black); expectedID == "" || expectedID != movePayload.PlayerID {
+	expectedID := s.getExpectedPlayerID(g, white, black)
+	if expectedID == "" || expectedID != movePayload.PlayerID {
 		return
 	}
 
 	uci := s.parseUCI(movePayload)
+
 	if err := g.PushNotationMove(uci, chess.UCINotation{}, nil); err != nil {
 		return
 	}
@@ -135,11 +138,16 @@ func (s *ChessService) ProcessMove(movePayload ws.MovePayload) {
 	winner := s.determineWinner(g.Outcome(), white, black, isDraw)
 
 	if g.Outcome() != chess.NoOutcome {
-		s.cleanupMatchTimer(matchId)
 		s.roomManager.SendMatchComplete(matchId, s.createMatchCompletePayload(matchId, winner, isDraw, reason))
+		s.cleanupMatch(matchId)
+		return
 	}
 
-	s.roomManager.SendMatchMoveProcess(matchId, []string{white.ID, black.ID}, s.createGameStatePayload(matchId, newFen, s.getExpectedPlayerID(g, white, black), moves, wTime, bTime, maxMoveTimeMs))
+	s.roomManager.SendMatchMoveProcess(
+		matchId,
+		[]string{white.ID, black.ID},
+		s.createGameStatePayload(matchId, newFen, s.getExpectedPlayerID(g, white, black), moves, wTime, bTime, maxMoveTimeMs),
+	)
 }
 
 func (s *ChessService) ProcessResign(matchId string, resignPayload ws.ResignPayload) {
@@ -153,8 +161,7 @@ func (s *ChessService) ProcessResign(matchId string, resignPayload ws.ResignPayl
 		return
 	}
 
-	s.cleanupMatchTimer(matchId)
 	payload := s.createMatchCompletePayload(matchId, winnerId, false, enum.ReasonResignation)
 	s.roomManager.SendMatchComplete(matchId, payload)
-
+	s.cleanupMatch(matchId)
 }
