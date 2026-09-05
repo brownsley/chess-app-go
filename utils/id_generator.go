@@ -6,11 +6,11 @@ import (
 )
 
 const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-const charset1 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+const charset1 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 var seededRand = rand.New(rand.NewSource(time.Now().UnixNano()))
 
-func userIdGenerate() string {
+func UserIdGenerate() string {
 	b := make([]byte, 8)
 	for i := range b {
 		b[i] = charset1[seededRand.Intn(len(charset1))]

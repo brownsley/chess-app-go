@@ -5,8 +5,8 @@ import (
 	"net/http"
 
 	"game-server/internal/models"
-	"game-server/internal/service"
-)
+	service "game-server/internal/service/matching"
+)	
 
 type MatchController struct {
 	matchingService *service.MatchingService

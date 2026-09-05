@@ -8,18 +8,19 @@ import (
 	"game-server/internal/game"
 	chessgame "game-server/internal/game"
 	"game-server/internal/models"
+	service "game-server/internal/service/redis"
 	"game-server/internal/ws"
 
 	"github.com/corentings/chess/v2"
 )
 
 type ChessService struct {
-	redisService *RedisService
+	redisService *service.RedisService
 	roomManager  *ws.RoomManager
 	matchTimers  sync.Map
 }
 
-func NewChessService(redisService *RedisService, rm *ws.RoomManager) *ChessService {
+func NewChessService(redisService *service.RedisService, rm *ws.RoomManager) *ChessService {
 	return &ChessService{redisService: redisService, roomManager: rm}
 }
 

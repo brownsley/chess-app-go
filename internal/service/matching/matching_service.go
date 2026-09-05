@@ -3,18 +3,22 @@ package service
 import (
 	"fmt"
 	"game-server/internal/game"
+
+	chess "game-server/internal/service/chess"
+	redis "game-server/internal/service/redis"
+
 	"game-server/internal/ws"
 	"game-server/utils"
 	"strings"
 )
 
 type MatchingService struct {
-	redisService *RedisService
-	chessService *ChessService
+	redisService *redis.RedisService
+	chessService *chess.ChessService
 	roomManager  *ws.RoomManager
 }
 
-func NewMatchingService(redisService *RedisService, chessService *ChessService, rm *ws.RoomManager) *MatchingService {
+func NewMatchingService(redisService *redis.RedisService, chessService *chess.ChessService, rm *ws.RoomManager) *MatchingService {
 	return &MatchingService{
 		redisService: redisService,
 		chessService: chessService,
