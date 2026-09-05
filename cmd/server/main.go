@@ -8,19 +8,21 @@ import (
 	"os"
 	"time"
 
+	"game-server/db"
 	"game-server/internal/auth"
 	"game-server/internal/controller"
 	"game-server/internal/routes"
-	"game-server/internal/service"
+	service "game-server/internal/service/auth"
+	chess "game-server/internal/service/chess"
+	redisService "game-server/internal/service/redis"
+
+	match "game-server/internal/service/matching"
 	"game-server/internal/ws"
 
 	"github.com/redis/go-redis/v9"
 )
 
 func main() {
-	// redisClient := redis.NewClient(&redis.Options{
-	// 	Addr: "127.0.0.1:6379",
-	// })
 
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:     "closing-grackle-177023.upstash.io:6379",
@@ -30,17 +32,24 @@ func main() {
 			MinVersion: tls.VersionTLS12,
 		},
 	})
+	dsn := "host=ep-billowing-lab-b3geagfe-pooler.c-4.ap-southeast-1.aws.neon.tech port=5432 user=neondb_owner password=npg_4bmQRICs6wXg dbname=neondb sslmode=require"
+	// dsn := "host=localhost port=5432 user=postgres password=secret dbname=postgres sslmode=disable"
 
-	redisService := service.NewRedisService(redisClient)
+	db, err := db.InitDB(dsn)
+	if err != nil {
+		log.Fatalf("Database initialization failed: %v", err)
+	}
+
+	redisService := redisService.NewRedisService(redisClient)
 	roomManager := ws.NewRoomManager(redisClient, nil)
 	go roomManager.StartRedisSubscriber()
 
-	chessService := service.NewChessService(redisService, roomManager)
-	matchingService := service.NewMatchingService(redisService, chessService, roomManager)
+	chessService := chess.NewChessService(redisService, roomManager)
+	matchingService := match.NewMatchingService(redisService, chessService, roomManager)
 	matchController := controller.NewMatchController(matchingService)
 
 	jwtService := service.NewJWTService("your_secret_key_here", 15*time.Minute, 7*24*time.Hour)
-	authHandler := auth.NewAuthHandler(jwtService)
+	authHandler := auth.NewAuthHandler(db, jwtService)
 
 	roomManager.OnMove = func(move ws.MovePayload) {
 		chessService.ProcessMove(move)
