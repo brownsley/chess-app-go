@@ -22,6 +22,21 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+func enableCORS(next nethttp.Handler) nethttp.Handler {
+	return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(nethttp.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 
 	redisClient := redis.NewClient(&redis.Options{
@@ -33,7 +48,6 @@ func main() {
 		},
 	})
 	dsn := "host=ep-billowing-lab-b3geagfe-pooler.c-4.ap-southeast-1.aws.neon.tech port=5432 user=neondb_owner password=npg_4bmQRICs6wXg dbname=neondb sslmode=require"
-	// dsn := "host=localhost port=5432 user=postgres password=secret dbname=postgres sslmode=disable"
 
 	db, err := db.InitDB(dsn)
 	if err != nil {
@@ -77,8 +91,10 @@ func main() {
 		port = "8080"
 	}
 
+	handlerWithCORS := enableCORS(mux)
+
 	log.Printf("Server started on :%s", port)
-	if err := nethttp.ListenAndServe(":"+port, mux); err != nil {
+	if err := nethttp.ListenAndServe(":"+port, handlerWithCORS); err != nil {
 		log.Fatal("Server Error: ", err)
 	}
 }
