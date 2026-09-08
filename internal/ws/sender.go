@@ -133,6 +133,26 @@ func (rm *RoomManager) HandleMatchWebSocket(w http.ResponseWriter, r *http.Reque
 			if err := json.Unmarshal(payloadBytes, &resign); err == nil && rm.OnResign != nil {
 				rm.OnResign(matchID, resign)
 			}
+
+		case TypeOfferDraw:
+			payloadBytes, _ := json.Marshal(msg.Payload)
+			var draw OfferDrawPayload
+			if err := json.Unmarshal(payloadBytes, &draw); err == nil && rm.OnOfferDraw != nil {
+				rm.OnOfferDraw(matchID, draw)
+			}
+		case TypeAcceptDraw:
+			payloadBytes, _ := json.Marshal(msg.Payload)
+			var accept AcceptDrawPayload
+			if err := json.Unmarshal(payloadBytes, &accept); err == nil && rm.OnAcceptDraw != nil {
+				rm.OnAcceptDraw(matchID, accept)
+			}
+
+		case TypeDeclineDraw:
+			payloadBytes, _ := json.Marshal(msg.Payload)
+			var decline DeclineDrawPayload
+			if err := json.Unmarshal(payloadBytes, &decline); err == nil && rm.OnDeclineDraw != nil {
+				rm.OnDeclineDraw(matchID, decline)
+			}
 		case TypeMatchComplete:
 			payloadBytes, _ := json.Marshal(msg.Payload)
 			var complete MatchCompletePayload

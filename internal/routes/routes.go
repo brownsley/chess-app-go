@@ -12,10 +12,14 @@ func RegisterRoutes(
 	mux *http.ServeMux,
 	authHandler *auth.AuthHandler,
 	matchController *controller.MatchController,
+	userController *controller.UserController,
+	friendshipController *controller.FriendshipController,
 	roomManager *ws.RoomManager,
 ) {
 	registerAuthRoutes(mux, authHandler)
 	registerMatchRoutes(mux, matchController)
+	registerUserRoutes(mux, userController)
+	registerFriendshipRoutes(mux, friendshipController)
 
 	mux.HandleFunc("GET /ws/lobby", roomManager.HandleLobbyWebSocket)
 

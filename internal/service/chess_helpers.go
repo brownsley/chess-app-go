@@ -28,17 +28,17 @@ func (s *ChessService) determineResignWinner(resigningPlayerID string, white, bl
 	return "", false
 }
 
-func (s *ChessService) determineWinner(outcome chess.Outcome, white, black models.Player, isDraw bool) string {
+func (s *ChessService) determineWinner(outcome chess.Outcome, white, black models.Player, isDraw bool) *models.Player {
 	if isDraw {
-		return ""
+		return nil
 	}
 	if outcome == chess.WhiteWon {
-		return white.ID
+		return &white
 	}
 	if outcome == chess.BlackWon {
-		return black.ID
+		return &black
 	}
-	return ""
+	return nil
 }
 
 func (s *ChessService) parseUCI(movePayload ws.MovePayload) string {

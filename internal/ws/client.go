@@ -16,6 +16,9 @@ type TokenValidator interface {
 
 type MoveHandlerFunc func(move MovePayload)
 type ResignHandlerFunc func(matchId string, resign ResignPayload)
+type DrawOfferFunc func(matchId string, draw OfferDrawPayload)
+type AcceptDrawFunc func(matchId string, accept AcceptDrawPayload)
+type DeclineDrawFunc func(matchId string, decline DeclineDrawPayload)
 type AcceptInviteHandlerFunc func(invite InvitePayload)
 type MatchCompleteHandlerFunc func(roomID string, complete MatchCompletePayload)
 
@@ -26,14 +29,16 @@ type Room struct {
 }
 
 type RoomManager struct {
-	mu             sync.Mutex
-	LobbyClients   map[string]*websocket.Conn
-	MatchRooms     map[string]*Room
-	Redis          *redis.Client
-	TokenValidator TokenValidator
-
+	mu              sync.Mutex
+	LobbyClients    map[string]*websocket.Conn
+	MatchRooms      map[string]*Room
+	Redis           *redis.Client
+	TokenValidator  TokenValidator
 	OnMove          MoveHandlerFunc
 	OnResign        ResignHandlerFunc
+	OnOfferDraw     DrawOfferFunc
+	OnAcceptDraw    AcceptDrawFunc
+	OnDeclineDraw   DeclineDrawFunc
 	OnAcceptInvite  AcceptInviteHandlerFunc
 	OnMatchComplete MatchCompleteHandlerFunc
 }

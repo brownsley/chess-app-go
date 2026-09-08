@@ -1,6 +1,7 @@
 package service
 
 import (
+	"log"
 	"sync"
 	"time"
 
@@ -8,20 +9,24 @@ import (
 	"game-server/internal/game"
 	chessgame "game-server/internal/game"
 	"game-server/internal/models"
-	service "game-server/internal/service/redis"
 	"game-server/internal/ws"
 
 	"github.com/corentings/chess/v2"
 )
 
 type ChessService struct {
-	redisService *service.RedisService
+	redisService *RedisService
+	gameService  *GameService
 	roomManager  *ws.RoomManager
 	matchTimers  sync.Map
 }
 
-func NewChessService(redisService *service.RedisService, rm *ws.RoomManager) *ChessService {
-	return &ChessService{redisService: redisService, roomManager: rm}
+func NewChessService(redisService *RedisService, gameService *GameService, rm *ws.RoomManager) *ChessService {
+	return &ChessService{
+		redisService: redisService,
+		gameService:  gameService,
+		roomManager:  rm,
+	}
 }
 
 func (s *ChessService) InitializeMatch(matchId string, matchType game.MatchType, white, black models.Player) {
@@ -74,7 +79,6 @@ func (s *ChessService) InitializeMatch(matchId string, matchType game.MatchType,
 
 				s.roomManager.SendMatchMoveProcess(
 					matchId,
-					[]string{white.ID, black.ID},
 					s.createGameStatePayload(matchId, currentFen, nextPlayerID, moves, wTime, bTime, maxMoveTimeMs),
 				)
 			}
@@ -87,6 +91,8 @@ func (s *ChessService) HandleTimeout(matchId string, isWhiteTimeout bool, white,
 	if !isWhiteTimeout {
 		winnerId = white.ID
 	}
+
+	_ = s.gameService.ProcessGameResult(white.ID, white.Elo, black.ID, black.Elo, winnerId, false)
 
 	s.roomManager.SendMatchComplete(matchId, s.createMatchCompletePayload(matchId, winnerId, false, enum.ReasonTimeOut))
 	s.cleanupMatch(matchId)
@@ -139,14 +145,28 @@ func (s *ChessService) ProcessMove(movePayload ws.MovePayload) {
 	winner := s.determineWinner(g.Outcome(), white, black, isDraw)
 
 	if g.Outcome() != chess.NoOutcome {
-		s.roomManager.SendMatchComplete(matchId, s.createMatchCompletePayload(matchId, winner, isDraw, reason))
+		var winnerID string
+		if winner != nil {
+			winnerID = winner.ID
+		}
+
+		err := s.gameService.ProcessGameResult(
+			white.ID, white.Elo,
+			black.ID, black.Elo,
+			winnerID,
+			isDraw,
+		)
+		if err != nil {
+			log.Printf("[GAME ERROR] ProcessGameResult failed: %v", err)
+		}
+
+		s.roomManager.SendMatchComplete(matchId, s.createMatchCompletePayload(matchId, winnerID, isDraw, reason))
 		s.cleanupMatch(matchId)
 		return
 	}
 
 	s.roomManager.SendMatchMoveProcess(
 		matchId,
-		[]string{white.ID, black.ID},
 		s.createGameStatePayload(matchId, newFen, s.getExpectedPlayerID(g, white, black), moves, wTime, bTime, maxMoveTimeMs),
 	)
 }
@@ -162,7 +182,51 @@ func (s *ChessService) ProcessResign(matchId string, resignPayload ws.ResignPayl
 		return
 	}
 
+	_ = s.gameService.ProcessGameResult(white.ID, white.Elo, black.ID, black.Elo, winnerId, false)
+
 	payload := s.createMatchCompletePayload(matchId, winnerId, false, enum.ReasonResignation)
 	s.roomManager.SendMatchComplete(matchId, payload)
 	s.cleanupMatch(matchId)
+}
+
+func (s *ChessService) ProcessOfferDraw(matchId string, offerDraw ws.OfferDrawPayload) {
+	_, _, ok := s.getMatchPlayers(matchId)
+	if !ok {
+		return
+	}
+	s.roomManager.SendOfferDraw(matchId, offerDraw)
+}
+
+func (s *ChessService) ProcessAcceptDraw(matchId string, acceptDraw ws.AcceptDrawPayload) {
+	white, black, ok := s.getMatchPlayers(matchId)
+	if !ok {
+		return
+	}
+
+	err := s.gameService.ProcessGameResult(
+		white.ID, white.Elo,
+		black.ID, black.Elo,
+		"",
+		true,
+	)
+	if err != nil {
+		log.Printf("[GAME ERROR] ProcessGameResult for Draw failed: %v", err)
+	}
+
+	s.roomManager.SendMatchComplete(matchId, s.createMatchCompletePayload(
+		matchId,
+		"",
+		true,
+		enum.ReasonDrawAgreement,
+	))
+
+	s.cleanupMatch(matchId)
+}
+
+func (s *ChessService) ProcessDeclineDraw(matchId string, declineDraw ws.DeclineDrawPayload) {
+	_, _, ok := s.getMatchPlayers(matchId)
+	if !ok {
+		return
+	}
+	s.roomManager.SendDeclineDraw(matchId, declineDraw)
 }

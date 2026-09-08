@@ -92,18 +92,30 @@ func (rm *RoomManager) SendMatchFoundToBoth(matchId string, playerId1, playerId2
 }
 
 func (rm *RoomManager) SendInvite(invite InvitePayload) {
-	targetIDs := []string{invite.OtherPlayer}
+	targetIDs := []string{invite.ReceiverID}
 	rm.BroadcastToRedis(targetIDs, TypeInvite, invite)
 }
 
-func (rm *RoomManager) SendMatchMoveProcess(matchId string, targetIDs []string, gameState GameStatePayload) {
+func (rm *RoomManager) SendMatchMoveProcess(matchId string, gameState GameStatePayload) {
 	rm.BroadcastToRedis([]string{matchId}, TypeMove, gameState)
+}
+
+func (rm *RoomManager) SendResignProcess(matchId string, resignPayload ResignPayload) {
+	rm.BroadcastToRedis([]string{matchId}, TypeResign, resignPayload)
 }
 
 func (rm *RoomManager) SendMatchComplete(matchId string, completePayload MatchCompletePayload) {
 	rm.BroadcastToRedis([]string{matchId}, TypeMatchComplete, completePayload)
 }
 
-func (rm *RoomManager) SendResignProcess(matchId string, targetIDs []string, resignPayload ResignPayload) {
-	rm.BroadcastToRedis([]string{matchId}, TypeResign, resignPayload)
+func (rm *RoomManager) SendOfferDraw(matchId string, offerDraw OfferDrawPayload) {
+	rm.BroadcastToRedis([]string{matchId}, TypeOfferDraw, offerDraw)
+}
+
+func (rm *RoomManager) SendAcceptDraw(matchId string, acceptDraw AcceptDrawPayload) {
+	rm.BroadcastToRedis([]string{matchId}, TypeAcceptDraw, acceptDraw)
+}
+
+func (rm *RoomManager) SendDeclineDraw(matchId string, declineDraw DeclineDrawPayload) {
+	rm.BroadcastToRedis([]string{matchId}, TypeDeclineDraw, declineDraw)
 }

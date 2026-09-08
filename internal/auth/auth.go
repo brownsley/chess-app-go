@@ -3,14 +3,15 @@ package auth
 import (
 	"encoding/json"
 	"fmt"
-	"game-server/db"
-	"game-server/internal/models"
-	service "game-server/internal/service/auth"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"time"
+
+	"game-server/db"
+	"game-server/internal/response"
+	"game-server/internal/service"
 
 	"gorm.io/gorm"
 )
@@ -66,17 +67,21 @@ func (h *AuthHandler) HandleGoogleLogin(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var user db.User
+	isNewUser := false
+
 	result := h.db.Where("google_id = ?", tokenInfo.UserId).First(&user)
 
 	if result.Error != nil {
 		if result.Error == gorm.ErrRecordNotFound {
+			isNewUser = true
+
 			user = db.User{
 				GoogleID:  tokenInfo.UserId,
 				Email:     tokenInfo.Email,
 				Name:      tokenInfo.Name,
 				AvatarURL: tokenInfo.Picture,
 				Elo:       1200,
-				Country:   "MM",
+				Country:   "",
 			}
 
 			if createErr := h.db.Create(&user).Error; createErr != nil {
@@ -85,7 +90,7 @@ func (h *AuthHandler) HandleGoogleLogin(w http.ResponseWriter, r *http.Request) 
 				return
 			}
 
-			log.Printf("[NEW USER] Registered successfully | Custom ID: %s | Google ID: %s | Email: %s", user.UserID, user.GoogleID, user.Email)
+			log.Printf("[NEW USER] Registered successfully | Custom ID: %s | Google ID: %s", user.UserID, user.GoogleID)
 		} else {
 			log.Printf("[DATABASE ERROR] Failed to query user %s: %v", tokenInfo.UserId, result.Error)
 			http.Error(w, "Database search error", http.StatusInternalServerError)
@@ -100,11 +105,11 @@ func (h *AuthHandler) HandleGoogleLogin(w http.ResponseWriter, r *http.Request) 
 		user.Name = tokenInfo.Name
 		user.AvatarURL = tokenInfo.Picture
 
-		log.Printf("[EXISTING USER] Logged in | Custom ID: %s | DB ID: %d | Email: %s | Avatar: %s", user.UserID, user.ID, user.Email, user.AvatarURL)
+		log.Printf("[EXISTING USER] Logged in | Custom ID: %s | DB ID: %d | Email: %s", user.UserID, user.ID, user.Email)
 	}
 
 	accessToken, refreshToken, err := h.jwtService.GenerateTokenPair(
-		fmt.Sprintf("%d", user.ID),
+		user.UserID,
 		user.Email,
 		user.Name,
 	)
@@ -114,20 +119,12 @@ func (h *AuthHandler) HandleGoogleLogin(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	response := models.AuthResponse{
+	response := response.AuthResponse{
 		Message:      "Successfully authenticated",
+		UserID:       user.UserID,
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
-		User: models.UserResponse{
-			ID:        user.ID,
-			UserID:    user.UserID,
-			GoogleID:  user.GoogleID,
-			Email:     user.Email,
-			Name:      user.Name,
-			AvatarURL: user.AvatarURL,
-			Elo:       user.Elo,
-			Country:   user.Country,
-		},
+		IsNewUser:    isNewUser,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -163,6 +160,7 @@ func (h *AuthHandler) HandleRefreshToken(w http.ResponseWriter, r *http.Request)
 	log.Printf("[TOKEN REFRESH] Token pair re-issued for User ID: %s", claims.UserID)
 
 	response := map[string]interface{}{
+		"user_id":       claims.UserID,
 		"access_token":  accessToken,
 		"refresh_token": newRefreshToken,
 	}

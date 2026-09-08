@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"game-server/internal/game"
+	"game-server/internal/request"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -39,11 +40,16 @@ func makeMatchingPrefix(gameMode game.MatchType) string {
 	return game.GetQueueName(gameMode)
 }
 
-func (s *RedisService) AddToMatchingQueue(gameMode game.MatchType, playerId string, playerName string, playerElo int) error {
+func (s *RedisService) AddToMatchingQueue(gameMode game.MatchType, req request.JoinQueueRequest) error {
 	queueKey := makeMatchingPrefix(gameMode)
-	memberValue := fmt.Sprintf("%s:%s", playerId, playerName)
+	memberValue := fmt.Sprintf("%s:%s:%s:%s",
+		req.PlayerId,
+		req.PlayerName,
+		req.Country,
+		req.AvatarURL,
+	)
 	return s.client.ZAdd(s.ctx, queueKey, redis.Z{
-		Score:  float64(playerElo),
+		Score:  float64(req.PlayerElo),
 		Member: memberValue,
 	}).Err()
 }
@@ -57,7 +63,7 @@ func (s *RedisService) RemoveFromMatchingQueue(gameMode game.MatchType, rawMembe
 	return count > 0, nil
 }
 
-func (s *RedisService) FindMatchingPlayers(gameMode game.MatchType, playerElo int, gap int) ([]string, error) {
+func (s *RedisService) FindMatchingPlayers(gameMode game.MatchType, playerElo int, gap int) ([]redis.Z, error) {
 	queueKey := makeMatchingPrefix(gameMode)
 	minElo := float64(playerElo - gap)
 	maxElo := float64(playerElo + gap)
@@ -68,7 +74,7 @@ func (s *RedisService) FindMatchingPlayers(gameMode game.MatchType, playerElo in
 		Start:   fmt.Sprintf("%f", minElo),
 		Stop:    fmt.Sprintf("%f", maxElo),
 	}
-	return s.client.ZRangeArgs(s.ctx, args).Result()
+	return s.client.ZRangeArgsWithScores(s.ctx, args).Result()
 }
 
 func (s *RedisService) GetPlayersFromQueue(gameMode game.MatchType, start, end int64) ([]string, error) {

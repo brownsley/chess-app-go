@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"game-server/internal/models"
-	service "game-server/internal/service/matching"
-)	
+	"game-server/internal/request"
+	"game-server/internal/service"
+)
 
 type MatchController struct {
 	matchingService *service.MatchingService
@@ -24,7 +24,7 @@ func (c *MatchController) JoinQueueHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	var req models.JoinQueueRequest
+	var req request.JoinQueueRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
 		return
@@ -35,7 +35,7 @@ func (c *MatchController) JoinQueueHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	c.matchingService.JoinQueue(req.GameMode, req.Minutes, req.PlayerId, req.PlayerName, req.PlayerElo)
+	c.matchingService.JoinQueue(req.GameMode, req)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -51,7 +51,7 @@ func (c *MatchController) LeaveQueueHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	var req models.LeaveQueueRequest
+	var req request.LeaveQueueRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
 		return

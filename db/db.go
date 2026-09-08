@@ -13,8 +13,21 @@ import (
 
 var DB *gorm.DB
 
-func InitDB(dsn string) (*gorm.DB, error) {
+func ResetAndMigrate(db *gorm.DB) error {
+	log.Println("[WARNING] Resetting database: Dropping existing tables...")
 
+	_ = db.Migrator().DropTable(&Friendship{}, &User{})
+
+	err := db.AutoMigrate(&User{}, &Friendship{})
+	if err != nil {
+		return fmt.Errorf("failed to auto-migrate after reset: %w", err)
+	}
+
+	log.Println("[SUCCESS] Database successfully reset and migrated!")
+	return nil
+}
+
+func InitDB(dsn string) (*gorm.DB, error) {
 	customLogger := logger.New(
 		log.New(os.Stdout, "\r\n", log.LstdFlags),
 		logger.Config{
@@ -26,15 +39,25 @@ func InitDB(dsn string) (*gorm.DB, error) {
 	)
 
 	database, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: customLogger,
+		Logger:                                   customLogger,
+		DisableForeignKeyConstraintWhenMigrating: true,
 	})
-
-	err = database.AutoMigrate(&User{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create users table: %w", err)
+		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	log.Println("Database migration successful: 'users' table is ready!")
+	if os.Getenv("RESET_DB") == "true" {
+		if err := ResetAndMigrate(database); err != nil {
+			return nil, err
+		}
+	} else {
+		err = database.AutoMigrate(&User{}, &Friendship{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to auto-migrate tables: %w", err)
+		}
+		log.Println("Database migration successful: 'users' and 'friendships' tables are ready!")
+	}
+
 	DB = database
 	return database, nil
 }

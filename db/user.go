@@ -2,6 +2,7 @@ package db
 
 import (
 	"game-server/utils"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -20,6 +21,11 @@ type User struct {
 	Wins        int    `gorm:"default:0;not null" json:"wins"`
 	Losses      int    `gorm:"default:0;not null" json:"losses"`
 	Draws       int    `gorm:"default:0;not null" json:"draws"`
+
+	Friends []Friendship `gorm:"-" json:"friends,omitempty"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 func (u *User) BeforeCreate(tx *gorm.DB) (err error) {

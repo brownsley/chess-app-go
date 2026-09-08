@@ -22,6 +22,9 @@ const (
 	TypeMove          MessageType = "move"
 	TypeAcceptInvite  MessageType = "accept_invite"
 	TypeResign        MessageType = "resign"
+	TypeOfferDraw     MessageType = "offer_draw"
+	TypeAcceptDraw    MessageType = "accept_draw"
+	TypeDeclineDraw   MessageType = "decline_draw"
 	TypeMatchComplete MessageType = "match_complete"
 )
 
@@ -31,12 +34,14 @@ type IncomingMessage struct {
 }
 
 type InvitePayload struct {
-	ChallengerName  string         `json:"challengerName"`
-	ChallengerID    string         `json:"challengerId"`
-	OtherPlayer     string         `json:"otherPlayer"`
-	OtherPlayerName string         `json:"otherPlayerName"`
-	ColorPreference ColorChoice    `json:"colorPreference"`
+	SenderID        string         `json:"senderId"`
+	SenderName      string         `json:"senderName"`
+	SenderCountry   string         `json:"senderCountry"`
+	SenderAvatar    string         `json:"senderAvatar"`
+	SenderElo       int            `json:"senderElo"`
+	ReceiverID      string         `json:"receiverId"`
 	MatchType       game.MatchType `json:"matchType"`
+	ColorPreference ColorChoice    `json:"colorPreference"`
 }
 
 type MovePayload struct {
@@ -58,6 +63,18 @@ type GameStatePayload struct {
 }
 
 type ResignPayload struct {
+	PlayerID string `json:"playerId"`
+}
+
+type OfferDrawPayload struct {
+	PlayerID string `json:"playerId"`
+}
+
+type AcceptDrawPayload struct {
+	PlayerID string `json:"playerId"`
+}
+
+type DeclineDrawPayload struct {
 	PlayerID string `json:"playerId"`
 }
 
