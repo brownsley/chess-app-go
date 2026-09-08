@@ -12,11 +12,7 @@ import (
 	"game-server/internal/auth"
 	"game-server/internal/controller"
 	"game-server/internal/routes"
-	service "game-server/internal/service/auth"
-	chess "game-server/internal/service/chess"
-	redisService "game-server/internal/service/redis"
-
-	match "game-server/internal/service/matching"
+	"game-server/internal/service"
 	"game-server/internal/ws"
 
 	"github.com/redis/go-redis/v9"
@@ -54,13 +50,19 @@ func main() {
 		log.Fatalf("Database initialization failed: %v", err)
 	}
 
-	redisService := redisService.NewRedisService(redisClient)
+	redisService := service.NewRedisService(redisClient)
 	roomManager := ws.NewRoomManager(redisClient, nil)
 	go roomManager.StartRedisSubscriber()
 
-	chessService := chess.NewChessService(redisService, roomManager)
-	matchingService := match.NewMatchingService(redisService, chessService, roomManager)
+	userController := controller.NewUserController(db)
+	gameService := service.NewGameService(userController)
+	userService := service.NewUserService(db)
+	chessService := service.NewChessService(redisService, gameService, roomManager)
+
+	matchingService := service.NewMatchingService(redisService, chessService, userService, roomManager)
 	matchController := controller.NewMatchController(matchingService)
+
+	friendshipControler := controller.NewFriendshipController(db)
 
 	jwtService := service.NewJWTService("your_secret_key_here", 15*time.Minute, 7*24*time.Hour)
 	authHandler := auth.NewAuthHandler(db, jwtService)
@@ -77,8 +79,20 @@ func main() {
 		matchingService.StartFriendMatch(invite, true)
 	}
 
+	roomManager.OnOfferDraw = func(matchID string, draw ws.OfferDrawPayload) {
+		chessService.ProcessOfferDraw(matchID, draw)
+	}
+
+	roomManager.OnAcceptDraw = func(matchID string, accept ws.AcceptDrawPayload) {
+		chessService.ProcessAcceptDraw(matchID, accept)
+	}
+
+	roomManager.OnDeclineDraw = func(matchID string, decline ws.DeclineDrawPayload) {
+		chessService.ProcessDeclineDraw(matchID, decline)
+	}
+
 	mux := nethttp.NewServeMux()
-	routes.RegisterRoutes(mux, authHandler, matchController, roomManager)
+	routes.RegisterRoutes(mux, authHandler, matchController, userController, friendshipControler, roomManager)
 
 	portFlag := flag.String("port", "", "Port to run server on")
 	flag.Parse()
